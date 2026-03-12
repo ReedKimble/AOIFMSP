@@ -1,0 +1,12 @@
+22716 : 2026-03-12 13:10:36,538 : INFO : telemetry.main : Attempt start. Configuration directory [C:\Codex\AOIFMSP\.azure-cli].
+22716 : 2026-03-12 13:10:36,538 : DEBUG : telemetry.note : acquiring lock
+22716 : 2026-03-12 13:10:36,538 : DEBUG : telemetry.note : acquired lock
+22716 : 2026-03-12 13:10:36,539 : INFO : telemetry.note : Update the note mtime to 2026-03-12 13:10:36.539177
+22716 : 2026-03-12 13:10:36,539 : WARNING : telemetry.note : Fail to parse or read the timestamp 'N/A' in the note file. Set the last send time to minimal. Reason: not readable
+22716 : 2026-03-12 13:10:36,539 : INFO : telemetry.records : 1 cache files to move.
+22716 : 2026-03-12 13:10:36,539 : INFO : telemetry.records : Create temp folder C:\Users\Reed\AppData\Local\Temp\tmpk929ned4
+22716 : 2026-03-12 13:10:36,540 : INFO : telemetry.records : Move file C:\Codex\AOIFMSP\.azure-cli\telemetry\cache to C:\Users\Reed\AppData\Local\Temp\tmpk929ned4\cache
+22716 : 2026-03-12 13:10:36,551 : INFO : telemetry.records : Processed file C:\Users\Reed\AppData\Local\Temp\tmpk929ned4\cache into 1 records.
+22716 : 2026-03-12 13:10:36,552 : INFO : telemetry.records : Remove directory C:\Users\Reed\AppData\Local\Temp\tmpk929ned4
+22716 : 2026-03-12 13:10:36,566 : INFO : telemetry.client : Accumulated 1 events. Flush the clients.
+22716 : 2026-03-12 13:10:36,566 : INFO : telemetry.client : Flush client c4395b75-49cc-422c-bc95-c7d51aef5d46.

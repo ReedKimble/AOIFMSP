@@ -1,0 +1,3 @@
+CMD-LOG-LINE-BEGIN 36216 | 2026-03-12 13:10:36,202 | INFO | az_command_data_logger | command args: bicep build --file {}
+CMD-LOG-LINE-BEGIN 36216 | 2026-03-12 13:10:36,309 | ERROR | az_command_data_logger | Error while attempting to retrieve the latest Bicep version: HTTPSConnectionPool(host='aka.ms', port=443): Max retries exceeded with url: /BicepLatestRelease (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object at 0x00000293D2FBEFD0>: Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions')).
+CMD-LOG-LINE-BEGIN 36216 | 2026-03-12 13:10:36,309 | INFO | az_command_data_logger | exit code: 1
