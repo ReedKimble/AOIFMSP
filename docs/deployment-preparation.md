@@ -52,6 +52,7 @@ Prepare:
 
 - an MSP-owned clone or fork of the repo
 - GitHub Actions enabled
+- GitHub Pages configured to use `GitHub Actions` as the publishing source
 - permission to add repository or environment secrets
 
 ### GitHub-to-Azure identity

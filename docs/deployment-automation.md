@@ -157,6 +157,23 @@ Purpose:
 - Configure Function App CORS for the hosted frontend
 - Emit deployment outputs in the workflow summary
 
+### Deploy Docs Site
+
+Path:
+
+- `.github/workflows/deploy-docs-site.yml`
+
+Purpose:
+
+- Publish the GitHub Pages onboarding site from the `site` folder
+- Support repos whose default branch is either `master` or `main`
+- Provide the public deployment guide and workflow-input wizard for MSP onboarding
+
+Important for forks:
+
+- In the fork's GitHub repository settings, Pages should use `GitHub Actions` as the source
+- If the fork stays on `master`, the workflow now deploys correctly on push without needing a branch rename
+
 ### Deploy Policy Pack
 
 Path:

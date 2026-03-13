@@ -21,6 +21,8 @@ The recommended onboarding path is the GitHub Pages documentation site, which is
 - Direct docs source: [docs/deployment-preparation.md](docs/deployment-preparation.md)
 - Deployment workflow details: [docs/deployment-automation.md](docs/deployment-automation.md)
 
+If you are using a fork, make sure GitHub Pages in that fork is configured to deploy from `GitHub Actions`. The docs workflow now publishes from either `master` or `main`.
+
 ## Repository Structure
 
 - [apps/web](apps/web) - main AOIFMSP application shell
