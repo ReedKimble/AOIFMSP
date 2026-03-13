@@ -1,6 +1,6 @@
 # AOIFMSP Recommended Microsoft Built-In Policies
 
-These Microsoft built-in policies should usually be assigned alongside the AOIFMSP custom initiative in [main.bicep](/C:/Codex/AOIFMSP/policy/azure/main.bicep).
+These Microsoft built-in policies should usually be assigned alongside the AOIFMSP custom initiative in [main.bicep](./main.bicep).
 
 Use Microsoft built-ins where they already express the service control clearly and are kept current by Microsoft.
 

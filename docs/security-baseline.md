@@ -140,8 +140,8 @@ Any deviation from this baseline should be documented with:
 
 AOIFMSP keeps two companion artifacts alongside this baseline:
 
-- [security-readiness-checklist.md](/C:/Codex/AOIFMSP/docs/security-readiness-checklist.md)
-- [policy/azure/README.md](/C:/Codex/AOIFMSP/policy/azure/README.md)
+- [security-readiness-checklist.md](./security-readiness-checklist.md)
+- [policy/azure/README.md](../policy/azure/README.md)
 
 Use the checklist for go-live readiness and the policy pack for enforceable platform controls.
 

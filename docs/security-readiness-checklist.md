@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This checklist operationalizes the requirements in [security-baseline.md](/C:/Codex/AOIFMSP/docs/security-baseline.md) for design review, pre-production validation, and production go-live.
+This checklist operationalizes the requirements in [security-baseline.md](./security-baseline.md) for design review, pre-production validation, and production go-live.
 
 Use it in three phases:
 

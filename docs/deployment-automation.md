@@ -4,14 +4,15 @@
 
 AOIFMSP should be deployable by an MSP from a cloned repository with GitHub Actions as the standard deployment path.
 
-This document defines that operating model. If you are an MSP preparing for your first deployment, start with [deployment-preparation.md](/C:/Codex/AOIFMSP/docs/deployment-preparation.md) first and then return here for the workflow details.
+This document defines that operating model. The recommended public starting point is the GitHub Pages deployment guide for this repository; this file remains the repo-native reference for the workflow details. If you are preparing for a first deployment from inside the repo, start with [deployment-preparation.md](./deployment-preparation.md) first and then return here.
 
 ## Recommended Reading Order
 
-1. [README.md](/C:/Codex/AOIFMSP/README.md) for product purpose and high-level fit
-2. [deployment-preparation.md](/C:/Codex/AOIFMSP/docs/deployment-preparation.md) for MSP readiness and required inputs
-3. This document for the GitHub Actions deployment model
-4. [security-baseline.md](/C:/Codex/AOIFMSP/docs/security-baseline.md) for production hardening expectations
+1. GitHub Pages deployment guide for the MSP-facing onboarding experience
+2. [README.md](../README.md) for the standard repo overview
+3. [deployment-preparation.md](./deployment-preparation.md) for MSP readiness and required inputs
+4. This document for the GitHub Actions deployment model
+5. [security-baseline.md](./security-baseline.md) for production hardening expectations
 
 ## Deployment Goal
 
@@ -217,7 +218,7 @@ For that reason, AOIFMSP keeps these design rules:
 - RBAC is created by infrastructure-as-code, not by post-deployment click paths
 - Frontend publishing uses Entra-authenticated blob upload, not storage keys
 - Security policy deployment is available as a workflow, not a tribal-knowledge step
-- Production hardening requirements remain governed by [security-baseline.md](/C:/Codex/AOIFMSP/docs/security-baseline.md)
+- Production hardening requirements remain governed by [security-baseline.md](./security-baseline.md)
 
 ## Remaining Deployment Gaps
 

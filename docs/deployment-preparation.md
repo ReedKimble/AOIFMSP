@@ -4,7 +4,7 @@
 
 This guide is the MSP-focused preparation document for AOIFMSP.
 
-Use it before running the GitHub deployment workflow so the first deployment is smooth, predictable, and leaves the MSP with a usable AOIFMSP environment rather than only partially created infrastructure.
+Use it before running the GitHub deployment workflow so the first deployment is smooth, predictable, and leaves the MSP with a usable AOIFMSP environment rather than only partially created infrastructure. The GitHub Pages deployment guide is intended to be the easier MSP-facing walkthrough; this file remains the repo-native preparation reference.
 
 ## What AOIFMSP Is
 
@@ -142,8 +142,8 @@ Once the workflow completes:
 
 ## Related Docs
 
-- [README.md](/C:/Codex/AOIFMSP/README.md)
-- [deployment-automation.md](/C:/Codex/AOIFMSP/docs/deployment-automation.md)
-- [security-baseline.md](/C:/Codex/AOIFMSP/docs/security-baseline.md)
-- [security-readiness-checklist.md](/C:/Codex/AOIFMSP/docs/security-readiness-checklist.md)
-- [action-normalization.md](/C:/Codex/AOIFMSP/docs/action-normalization.md)
+- [README.md](../README.md)
+- [deployment-automation.md](./deployment-automation.md)
+- [security-baseline.md](./security-baseline.md)
+- [security-readiness-checklist.md](./security-readiness-checklist.md)
+- [action-normalization.md](./action-normalization.md)

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AOIFMSP Deployment Guide</title>
+    <meta
+      name="description"
+      content="AOIFMSP platform overview, deployment preparation, and guided GitHub Actions deployment help for MSPs."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="docs-shell">
+      <div class="docs-hero-glow"></div>
+      <header class="docs-topbar">
+        <div class="docs-brand">
+          <div class="docs-brand__mark">AOI</div>
+          <div>
+            <p class="eyebrow">MSP Automation Platform</p>
+            <h1>AOIFMSP Deployment Guide</h1>
+          </div>
+        </div>
+        <div class="docs-topbar__actions">
+          <a class="docs-link-button docs-link-button--primary" href="#wizard">Open Wizard</a>
+          <a class="docs-link-button" id="repoLink" href="#">View Repo</a>
+        </div>
+      </header>
+
+      <div class="docs-layout">
+        <aside class="docs-nav">
+          <p class="eyebrow">Guide</p>
+          <nav class="docs-nav__list">
+            <button class="docs-nav__item docs-nav__item--active" data-view="overview" type="button">Platform</button>
+            <button class="docs-nav__item" data-view="prepare" type="button">Prepare</button>
+            <button class="docs-nav__item" data-view="deploy" type="button">Deploy</button>
+            <button class="docs-nav__item" data-view="security" type="button">Security</button>
+            <button class="docs-nav__item" data-view="faq" type="button">FAQ</button>
+          </nav>
+
+          <div class="docs-nav__panel">
+            <p class="eyebrow">Repo Docs</p>
+            <div class="docs-link-list" id="repoLinks"></div>
+          </div>
+        </aside>
+
+        <main class="docs-scene" id="scene"></main>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

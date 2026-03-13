@@ -4,7 +4,7 @@
 
 This folder contains a starter Azure Policy pack for AOIFMSP.
 
-It is designed to enforce the highest-confidence custom controls from [security-baseline.md](/C:/Codex/AOIFMSP/docs/security-baseline.md) while staying easy to review and evolve.
+It is designed to enforce the highest-confidence custom controls from [security-baseline.md](../../docs/security-baseline.md) while staying easy to review and evolve.
 
 ## What This Pack Includes
 
@@ -60,4 +60,4 @@ New-AzManagementGroupDeployment `
 
 ## Recommended Next Step
 
-Assign this custom initiative together with the built-ins in [built-in-recommendations.md](/C:/Codex/AOIFMSP/policy/azure/built-in-recommendations.md), then validate the results with [security-readiness-checklist.md](/C:/Codex/AOIFMSP/docs/security-readiness-checklist.md).
+Assign this custom initiative together with the built-ins in [built-in-recommendations.md](./built-in-recommendations.md), then validate the results with [security-readiness-checklist.md](../../docs/security-readiness-checklist.md).

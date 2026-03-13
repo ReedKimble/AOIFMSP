@@ -40,4 +40,4 @@ That build is then published to Azure Storage static website hosting.
 
 - Mock mode is only for local UI and product-flow development.
 - The Functions app contains the real Azure-backed repository layer and can run against live storage and Key Vault once the local Functions runtime is available.
-- The clone-to-test-tenant deployment path is documented in [deployment-automation.md](/C:/Codex/AOIFMSP/docs/deployment-automation.md).
+- The clone-to-test-tenant deployment path is documented in [deployment-automation.md](./deployment-automation.md).
