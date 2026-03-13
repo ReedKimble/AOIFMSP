@@ -35,6 +35,75 @@ const faqItems = [
   },
 ];
 
+const azureRegions = [
+  "eastus",
+  "eastus2",
+  "centralus",
+  "southcentralus",
+  "westus",
+  "westus2",
+  "westus3",
+  "northcentralus",
+  "canadacentral",
+  "canadaeast",
+  "uksouth",
+  "westeurope",
+  "northeurope",
+  "australiaeast",
+  "southeastasia",
+];
+
+const wizardFieldMeta = {
+  mspName: {
+    label: "MSP Name",
+    description: "The full MSP display name used in the AOIFMSP shell, branding API payload, and the first hosted experience after deployment.",
+  },
+  mspAbbreviation: {
+    label: "MSP Abbreviation",
+    description: "A short fallback brand label used when the logo or wordmark is unavailable or when the UI needs a compact identifier.",
+  },
+  location: {
+    label: "Azure Region",
+    description: "The Azure region used for the deployment record and the primary AOIFMSP resources for this environment.",
+  },
+  resourceGroupName: {
+    label: "Resource Group Name",
+    description: "The Azure resource group that will hold the AOIFMSP platform resources for this environment.",
+  },
+  namePrefix: {
+    label: "Name Prefix",
+    description: "A short alphanumeric prefix used when building Azure resource names. Use at least 3 meaningful characters.",
+  },
+  environmentName: {
+    label: "Environment Name",
+    description: "The environment label passed into deployment, usually `test`, `dev`, or `prod`.",
+  },
+  bootstrapAdminValue: {
+    label: "Bootstrap Admin Identity",
+    description: "The first AOIFMSP administrator to place into the `AOIFMSP Admins` group. Choose either UPN or Entra object ID mode.",
+  },
+  primaryColor: {
+    label: "Primary Color",
+    description: "The main brand color used for emphasis, primary actions, and AOIFMSP identity accents after deployment.",
+  },
+  secondaryColor: {
+    label: "Secondary Color",
+    description: "The secondary accent color used for highlights, supporting states, and warmer contrast moments in the shell.",
+  },
+  surfaceColor: {
+    label: "Surface Color",
+    description: "The base shell surface/background color for the branded AOIFMSP experience.",
+  },
+  logoMarkPath: {
+    label: "Logo Mark Path",
+    description: "Optional repo-relative path to a square or compact logo mark file committed into the repository before deployment.",
+  },
+  logoWordmarkPath: {
+    label: "Wordmark Path",
+    description: "Optional repo-relative path to a horizontal wordmark file committed into the repository before deployment.",
+  },
+};
+
 const state = {
   view: "overview",
   wizard: {
@@ -117,6 +186,15 @@ function workflowInputs() {
   ];
 }
 
+function helpIcon(text) {
+  return `<span class="docs-help" tabindex="0" data-tooltip="${escapeHtml(text)}">?</span>`;
+}
+
+function fieldHeader(key) {
+  const meta = wizardFieldMeta[key];
+  return `<span class="docs-field__label">${meta.label}${helpIcon(meta.description)}</span>`;
+}
+
 function checklistCard(title, items) {
   return `
     <article class="docs-card">
@@ -124,6 +202,17 @@ function checklistCard(title, items) {
       <ul class="docs-checklist">
         ${items.map((item) => `<li>${item}</li>`).join("")}
       </ul>
+    </article>
+  `;
+}
+
+function secretCard(name, source, note) {
+  return `
+    <article class="docs-card docs-card--tight">
+      <p class="eyebrow">Secret</p>
+      <h3>${name}</h3>
+      <p><strong>Where it comes from:</strong> ${source}</p>
+      <p>${note}</p>
     </article>
   `;
 }
@@ -195,16 +284,39 @@ function renderPrepare() {
           <span class="docs-pill">AZURE_PRINCIPAL_OBJECT_ID (recommended)</span>
         </div>
       </article>
+      <div class="docs-card-grid docs-card-grid--checklist">
+        ${secretCard("AZURE_CLIENT_ID", "The client/application ID of the Microsoft Entra app or service principal used by GitHub OIDC to deploy AOIFMSP.", "Create or identify the deployment app registration first, then copy its Application (client) ID from Microsoft Entra or Azure portal.")}
+        ${secretCard("AZURE_TENANT_ID", "The Microsoft Entra tenant ID for the tenant that owns the deployment identity and Azure subscription.", "This is usually the MSP's primary tenant ID and is visible in Microsoft Entra overview or Azure portal subscription context.")}
+        ${secretCard("AZURE_SUBSCRIPTION_ID", "The Azure subscription that will host the AOIFMSP resources.", "Copy this from the target subscription in Azure portal or `az account show`.")}
+        ${secretCard("AZURE_PRINCIPAL_OBJECT_ID", "The object ID of the deployment service principal in Microsoft Entra. This is optional but recommended.", "Use it when you want deployment RBAC assignment to be deterministic without relying on runtime lookup inside the workflow.")}
+      </div>
     </section>
   `;
 }
 
-function wizardField(label, inner) {
-  return `<label class="docs-field"><span>${label}</span>${inner}</label>`;
+function wizardField(key, inner) {
+  return `<label class="docs-field">${fieldHeader(key)}${inner}</label>`;
 }
 
-function wizardInput(key, label) {
-  return wizardField(label, `<input class="docs-input" data-input="${key}" value="${state.wizard[key]}" />`);
+function textInput(key) {
+  return `<input class="docs-input" data-input="${key}" value="${escapeAttribute(state.wizard[key])}" />`;
+}
+
+function colorInput(key) {
+  return `
+    <div class="docs-color-field">
+      <input class="docs-input" data-input="${key}" value="${escapeAttribute(state.wizard[key])}" />
+      <input class="docs-color-input" type="color" data-color="${key}" value="${escapeAttribute(normalizeColorValue(state.wizard[key]))}" />
+    </div>
+  `;
+}
+
+function selectInput(key, options) {
+  return `
+    <select class="docs-input" data-input="${key}">
+      ${options.map((option) => `<option value="${option}"${state.wizard[key] === option ? " selected" : ""}>${option}</option>`).join("")}
+    </select>
+  `;
 }
 
 function renderDeploy() {
@@ -218,33 +330,37 @@ function renderDeploy() {
       </div>
       <div class="docs-wizard">
         <div class="docs-wizard__form">
-          ${wizardField("Deployment profile", `
-            <div class="docs-segmented">
-              <button class="${state.wizard.profile === "test" ? "docs-segmented__button docs-segmented__button--active" : "docs-segmented__button"}" data-profile="test" type="button">Test</button>
-              <button class="${state.wizard.profile === "production" ? "docs-segmented__button docs-segmented__button--active" : "docs-segmented__button"}" data-profile="production" type="button">Production</button>
-            </div>
-          `)}
-          <div class="docs-form-grid">
-            ${wizardInput("mspName", "MSP Name")}
-            ${wizardInput("mspAbbreviation", "MSP Abbreviation")}
-            ${wizardInput("location", "Azure Region")}
-            ${wizardInput("resourceGroupName", "Resource Group Name")}
-            ${wizardInput("namePrefix", "Name Prefix")}
-            ${wizardInput("environmentName", "Environment Name")}
+          <div class="docs-card docs-card--tight">
+            ${wizardField("environmentName", `
+              <div class="docs-segmented">
+                <button class="${state.wizard.profile === "test" ? "docs-segmented__button docs-segmented__button--active" : "docs-segmented__button"}" data-profile="test" type="button">Test</button>
+                <button class="${state.wizard.profile === "production" ? "docs-segmented__button docs-segmented__button--active" : "docs-segmented__button"}" data-profile="production" type="button">Production</button>
+              </div>
+            `)}
           </div>
-          ${wizardField("Bootstrap admin identity", `
-            <div class="docs-segmented">
-              <button class="${state.wizard.bootstrapMode === "upn" ? "docs-segmented__button docs-segmented__button--active" : "docs-segmented__button"}" data-bootstrap-mode="upn" type="button">UPN</button>
-              <button class="${state.wizard.bootstrapMode === "objectId" ? "docs-segmented__button docs-segmented__button--active" : "docs-segmented__button"}" data-bootstrap-mode="objectId" type="button">Object Id</button>
-            </div>
-            <input class="docs-input" data-input="bootstrapAdminValue" value="${state.wizard.bootstrapAdminValue}" />
-          `)}
           <div class="docs-form-grid">
-            ${wizardInput("primaryColor", "Primary Color")}
-            ${wizardInput("secondaryColor", "Secondary Color")}
-            ${wizardInput("surfaceColor", "Surface Color")}
-            ${wizardInput("logoMarkPath", "Logo Mark Path")}
-            ${wizardInput("logoWordmarkPath", "Wordmark Path")}
+            ${wizardField("mspName", textInput("mspName"))}
+            ${wizardField("mspAbbreviation", textInput("mspAbbreviation"))}
+            ${wizardField("location", selectInput("location", azureRegions))}
+            ${wizardField("resourceGroupName", textInput("resourceGroupName"))}
+            ${wizardField("namePrefix", textInput("namePrefix"))}
+            ${wizardField("environmentName", textInput("environmentName"))}
+          </div>
+          <div class="docs-card docs-card--tight">
+            ${wizardField("bootstrapAdminValue", `
+              <div class="docs-segmented">
+                <button class="${state.wizard.bootstrapMode === "upn" ? "docs-segmented__button docs-segmented__button--active" : "docs-segmented__button"}" data-bootstrap-mode="upn" type="button">UPN</button>
+                <button class="${state.wizard.bootstrapMode === "objectId" ? "docs-segmented__button docs-segmented__button--active" : "docs-segmented__button"}" data-bootstrap-mode="objectId" type="button">Object Id</button>
+              </div>
+              ${textInput("bootstrapAdminValue")}
+            `)}
+          </div>
+          <div class="docs-form-grid">
+            ${wizardField("primaryColor", colorInput("primaryColor"))}
+            ${wizardField("secondaryColor", colorInput("secondaryColor"))}
+            ${wizardField("surfaceColor", colorInput("surfaceColor"))}
+            ${wizardField("logoMarkPath", textInput("logoMarkPath"))}
+            ${wizardField("logoWordmarkPath", textInput("logoWordmarkPath"))}
           </div>
         </div>
         <div class="docs-wizard__summary">
@@ -256,7 +372,7 @@ function renderDeploy() {
           <article class="docs-card">
             <p class="eyebrow">Workflow Inputs</p>
             <div class="docs-kv-list">
-              ${workflowInputs().map(([label, value]) => `<div class="docs-kv"><strong>${label}</strong><span>${value}</span></div>`).join("")}
+              ${workflowInputs().map(([label, value]) => `<div class="docs-kv"><strong>${label}</strong><span>${escapeHtml(String(value))}</span></div>`).join("")}
             </div>
           </article>
           <article class="docs-card">
@@ -317,7 +433,42 @@ function renderFaq() {
   `;
 }
 
-function render() {
+function captureFocus() {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLInputElement || active instanceof HTMLSelectElement || active instanceof HTMLTextAreaElement)) {
+    return null;
+  }
+
+  const inputKey = active.dataset.input || active.dataset.color || "";
+  if (!inputKey) {
+    return null;
+  }
+
+  return {
+    selector: active.dataset.input ? `[data-input="${active.dataset.input}"]` : `[data-color="${active.dataset.color}"]`,
+    start: active.selectionStart,
+    end: active.selectionEnd,
+  };
+}
+
+function restoreFocus(snapshot) {
+  if (!snapshot) {
+    return;
+  }
+
+  const next = document.querySelector(snapshot.selector);
+  if (!(next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement || next instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  next.focus();
+  if ((next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement) && snapshot.start !== null && snapshot.end !== null) {
+    next.setSelectionRange(snapshot.start, snapshot.end);
+  }
+}
+
+function render(preserveFocus = false) {
+  const focusSnapshot = preserveFocus ? captureFocus() : null;
   const scene = document.getElementById("scene");
   const repoLink = document.getElementById("repoLink");
   const repoLinksHost = document.getElementById("repoLinks");
@@ -357,10 +508,11 @@ function render() {
       break;
   }
 
-  wireWizard();
+  wireInteractions();
+  restoreFocus(focusSnapshot);
 }
 
-function wireWizard() {
+function wireInteractions() {
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.onclick = () => {
       state.view = button.dataset.view;
@@ -385,14 +537,40 @@ function wireWizard() {
 
   document.querySelectorAll("[data-input]").forEach((input) => {
     input.oninput = (event) => {
-      state.wizard[input.dataset.input] = event.target.value;
-      if (input.dataset.input === "environmentName" || input.dataset.input === "namePrefix") {
-        state.wizard.resourceGroupName = `rg-aoifmsp-${state.wizard.environmentName}-${state.wizard.location}`;
-      }
-      render();
+      const key = input.dataset.input;
+      state.wizard[key] = event.target.value;
+      render(true);
+    };
+    input.onchange = (event) => {
+      const key = input.dataset.input;
+      state.wizard[key] = event.target.value;
+      render(true);
+    };
+  });
+
+  document.querySelectorAll("[data-color]").forEach((input) => {
+    input.oninput = (event) => {
+      const key = input.dataset.color;
+      state.wizard[key] = event.target.value;
+      render(true);
     };
   });
 }
 
-wireWizard();
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(String(value));
+}
+
+function normalizeColorValue(value) {
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#10634a";
+}
+
 render();
