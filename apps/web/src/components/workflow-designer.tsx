@@ -65,6 +65,9 @@ interface WorkflowConnectionDragState {
   sourcePort: WorkflowEdgeType;
   pointerX: number;
   pointerY: number;
+  edgeId?: string;
+  reconnectEnd?: "source" | "target";
+  targetNodeId?: string;
 }
 
 interface WorkflowMarqueeState {
@@ -74,6 +77,22 @@ interface WorkflowMarqueeState {
   currentY: number;
   additive: boolean;
   baseNodeIds: string[];
+}
+
+interface WorkflowContextMenuState {
+  kind: "canvas" | "node" | "edge" | "group";
+  viewportX: number;
+  viewportY: number;
+  canvasX: number;
+  canvasY: number;
+  nodeId?: string;
+  edgeId?: string;
+  groupId?: string;
+}
+
+interface WorkflowContextAction {
+  id: string;
+  label: string;
 }
 
 export interface WorkflowSceneSnapshot {
@@ -121,6 +140,7 @@ export function WorkflowStudio({
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [contextMenuState, setContextMenuState] = useState<WorkflowContextMenuState | null>(null);
   const [viewportState, setViewportState] = useState<WorkflowViewportState>({
     scrollLeft: 0,
     scrollTop: 0,
@@ -156,12 +176,108 @@ export function WorkflowStudio({
     () => draft?.edges.find((edge) => edge.id === selectedEdgeId) ?? null,
     [draft, selectedEdgeId],
   );
+  const collapsedGroups = useMemo(() => groups.filter((group) => group.collapsed), [groups]);
+  const collapsedGroupNodeIds = useMemo(() => new Set(collapsedGroups.flatMap((group) => group.nodeIds)), [collapsedGroups]);
+  const visibleNodes = useMemo(() => (draft?.nodes ?? []).filter((node) => !collapsedGroupNodeIds.has(node.id)), [draft, collapsedGroupNodeIds]);
+  const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
+  const visibleAnnotations = useMemo(
+    () => annotations.filter((annotation) => !(annotation.groupId && collapsedGroups.some((group) => group.id === annotation.groupId)) && !(annotation.nodeIds?.some((nodeId) => collapsedGroupNodeIds.has(nodeId)) ?? false)),
+    [annotations, collapsedGroupNodeIds, collapsedGroups],
+  );
   const isMultiSelection = selectedNodeIds.length > 1;
 
   const zoom = clampZoom(getZoomValue(draft));
   const connectorActionPalette = useMemo(() => groupActionsByConnector(detail?.availableActions ?? []), [detail?.availableActions]);
   const triggerCapableActions = useMemo(() => (detail?.availableActions ?? []).filter((action) => action.isTriggerCapable), [detail?.availableActions]);
   const canvasSize = useMemo(() => calculateCanvasSize(draft), [draft]);
+  const contextMenuActions = useMemo(() => {
+    if (!contextMenuState) {
+      return [] as WorkflowContextAction[];
+    }
+
+    if (contextMenuState.kind === "canvas") {
+      return [
+        { id: "canvas-note", label: "Canvas Note" },
+        { id: "canvas-fit", label: "Frame" },
+        ...(draft?.nodes[0] ? [{ id: "canvas-focus-trigger", label: "Focus Start" }] : []),
+      ];
+    }
+
+    if (contextMenuState.kind === "node") {
+      const node = draft?.nodes.find((item) => item.id === contextMenuState.nodeId);
+      if (!node) {
+        return [] as WorkflowContextAction[];
+      }
+
+      const existingEdges = draft?.edges.filter((edge) => edge.sourceNodeId === node.id) ?? [];
+      const routeActions = getNodePortLabels(node).map((port) => {
+        const existingEdge = existingEdges.find((edge) => (edge.sourcePort ?? edge.edgeType ?? "success") === port);
+        return existingEdge
+          ? { id: `node-route-focus:${port}`, label: port === "success" ? "Follow Next" : `Follow ${toDisplay(port)}` }
+          : { id: `node-route-add:${port}`, label: port === "success" ? "Add Next" : `Add ${toDisplay(port)}` };
+      });
+      const currentPolicy = node.errorHandling?.strategy ?? draft?.errorHandling.defaultNodePolicy.strategy;
+
+      return [
+        { id: "node-focus", label: "Focus" },
+        ...routeActions,
+        currentPolicy === "retry" ? { id: "node-policy-fail", label: "Fail Errors" } : { id: "node-policy-retry", label: "Retry Errors" },
+        { id: "node-note", label: "Step Note" },
+        { id: "node-delete", label: "Delete" },
+      ];
+    }
+
+    if (contextMenuState.kind === "edge") {
+      const edge = draft?.edges.find((item) => item.id === contextMenuState.edgeId);
+      return [
+        ...(edge ? [{ id: "edge-focus-source", label: "Source" }, { id: "edge-focus-target", label: "Target" }] : []),
+        { id: "edge-reconnect-source", label: "Reconnect From" },
+        { id: "edge-reconnect-target", label: "Reconnect To" },
+        { id: "edge-note", label: "Route Note" },
+        { id: "edge-delete", label: "Delete" },
+      ];
+    }
+
+    const group = groups.find((item) => item.id === contextMenuState.groupId);
+    return [
+      { id: "group-toggle", label: group?.collapsed ? "Expand" : "Collapse" },
+      { id: "group-frame", label: "Frame" },
+      { id: "group-select-nodes", label: "Select Steps" },
+      { id: "group-note", label: "Step Note" },
+      { id: "group-delete", label: "Delete" },
+    ];
+  }, [contextMenuState, draft, groups]);
+  const contextMenuRadius = useMemo(() => {
+    if (contextMenuActions.length >= 7) {
+      return 112;
+    }
+    if (contextMenuActions.length >= 5) {
+      return 96;
+    }
+    return 84;
+  }, [contextMenuActions.length]);
+  const contextMenuTitle = useMemo(() => {
+    if (!contextMenuState) {
+      return "";
+    }
+
+    if (contextMenuState.kind === "node" && contextMenuState.nodeId) {
+      const node = draft?.nodes.find((item) => item.id === contextMenuState.nodeId);
+      return node?.label ?? toDisplay(contextMenuState.kind);
+    }
+
+    if (contextMenuState.kind === "edge" && contextMenuState.edgeId) {
+      const edge = draft?.edges.find((item) => item.id === contextMenuState.edgeId);
+      return edge ? getEdgeDisplayLabel(edge) ?? "Route" : "Route";
+    }
+
+    if (contextMenuState.kind === "group" && contextMenuState.groupId) {
+      const group = groups.find((item) => item.id === contextMenuState.groupId);
+      return group?.label ?? "Group";
+    }
+
+    return "Canvas";
+  }, [contextMenuState, draft, groups]);
 
   useEffect(() => {
     setSelectedEdgeId(null);
@@ -229,6 +345,64 @@ export function WorkflowStudio({
     setSelectedGroupId(null);
     setSelectedAnnotationId(null);
     onSelectNode(null);
+  };
+
+  const closeContextMenu = () => {
+    setContextMenuState(null);
+  };
+
+  const openContextMenu = (
+    event: { clientX: number; clientY: number; preventDefault: () => void; stopPropagation: () => void },
+    state: Omit<WorkflowContextMenuState, "viewportX" | "viewportY" | "canvasX" | "canvasY">,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const viewportRect = viewportRef.current?.getBoundingClientRect();
+    const canvasPoint = screenToCanvasPoint(event.clientX, event.clientY);
+    setContextMenuState({
+      ...state,
+      viewportX: Math.max(24, event.clientX - (viewportRect?.left ?? 0)),
+      viewportY: Math.max(24, event.clientY - (viewportRect?.top ?? 0)),
+      canvasX: canvasPoint.x,
+      canvasY: canvasPoint.y,
+    });
+  };
+
+  const startEdgeReconnect = (edge: WorkflowEdge, reconnectEnd: "source" | "target", clientX: number, clientY: number) => {
+    const point = screenToCanvasPoint(clientX, clientY);
+    setConnectionDragState({
+      sourceNodeId: edge.sourceNodeId,
+      sourcePort: (edge.sourcePort ?? edge.edgeType ?? "success") as WorkflowEdgeType,
+      pointerX: point.x,
+      pointerY: point.y,
+      edgeId: edge.id,
+      reconnectEnd,
+      targetNodeId: edge.targetNodeId,
+    });
+    selectEdge(edge.id);
+    closeContextMenu();
+  };
+
+  const toggleGroupCollapsed = (groupId: string) => {
+    if (!draft) {
+      return;
+    }
+
+    const group = groups.find((item) => item.id === groupId);
+    if (!group) {
+      return;
+    }
+
+    const bounds = getGroupBounds(group, draft.nodes);
+    onDraftChange(
+      updateGroupInDraft(draft, groupId, (item) => ({
+        ...item,
+        collapsed: !item.collapsed,
+        ...(bounds ? { bounds } : {}),
+      })),
+    );
+    selectGroup(groupId);
+    closeContextMenu();
   };
 
   const syncViewportState = () => {
@@ -397,6 +571,43 @@ export function WorkflowStudio({
   }, [draft, marqueeState, onSelectNode, zoom]);
 
   useEffect(() => {
+    if (selectedNodeIds.some((nodeId) => collapsedGroupNodeIds.has(nodeId))) {
+      setSelectedNodeIds((current) => current.filter((nodeId) => !collapsedGroupNodeIds.has(nodeId)));
+    }
+
+    if (selectedEdge && (!visibleNodeIds.has(selectedEdge.sourceNodeId) || !visibleNodeIds.has(selectedEdge.targetNodeId))) {
+      setSelectedEdgeId(null);
+    }
+  }, [collapsedGroupNodeIds, selectedEdge, selectedNodeIds, visibleNodeIds]);
+
+  useEffect(() => {
+    if (!contextMenuState) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(".workflow-context-menu")) {
+        return;
+      }
+      closeContextMenu();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenuState]);
+
+  useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) {
       return;
@@ -451,6 +662,170 @@ export function WorkflowStudio({
       window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [panState]);
+
+  const handleContextAction = (action: string) => {
+    if (!draft || !contextMenuState) {
+      return;
+    }
+
+    if (action === "canvas-note") {
+      const nextDraft = addAnnotationToDraft(draft, { kind: "note", position: { x: contextMenuState.canvasX, y: contextMenuState.canvasY } });
+      onDraftChange(nextDraft.draft);
+      selectAnnotation(nextDraft.annotationId);
+      closeContextMenu();
+      return;
+    }
+
+    if (action === "canvas-fit") {
+      fitCanvasToViewport();
+      closeContextMenu();
+      return;
+    }
+
+    if (action === "canvas-focus-trigger") {
+      const firstNode = draft.nodes[0];
+      if (firstNode) {
+        selectNodes([firstNode.id]);
+        centerNodeInViewport(firstNode.id);
+      }
+      closeContextMenu();
+      return;
+    }
+
+    if (contextMenuState.kind === "node" && contextMenuState.nodeId) {
+      const node = draft.nodes.find((item) => item.id === contextMenuState.nodeId);
+      if (!node) {
+        closeContextMenu();
+        return;
+      }
+
+      if (action === "node-focus") {
+        selectNodes([node.id]);
+        centerNodeInViewport(node.id);
+      } else if (action.startsWith("node-route-add:")) {
+        const port = action.split(":")[1] as WorkflowEdgeType;
+        const nextDraft = appendBranchNode(draft, node, port);
+        onDraftChange(nextDraft.draft);
+        selectNodes([nextDraft.nextSelectedNodeId]);
+      } else if (action.startsWith("node-route-focus:")) {
+        const port = action.split(":")[1] as WorkflowEdgeType;
+        const edge = draft.edges.find((item) => item.sourceNodeId === node.id && (item.sourcePort ?? item.edgeType ?? "success") === port);
+        if (edge) {
+          selectNodes([edge.targetNodeId]);
+          centerNodeInViewport(edge.targetNodeId);
+        }
+      } else if (action === "node-policy-retry") {
+        onDraftChange(
+          updateNode(draft, node.id, (currentNode) => ({
+            ...currentNode,
+            errorHandling: {
+              ...(currentNode.errorHandling ?? draft.errorHandling.defaultNodePolicy),
+              strategy: "retry",
+              maxRetries: currentNode.errorHandling?.maxRetries ?? 2,
+              retryDelaySeconds: currentNode.errorHandling?.retryDelaySeconds ?? 30,
+            },
+          })),
+        );
+      } else if (action === "node-policy-fail") {
+        onDraftChange(
+          updateNode(draft, node.id, (currentNode) => ({
+            ...currentNode,
+            errorHandling: {
+              ...(currentNode.errorHandling ?? draft.errorHandling.defaultNodePolicy),
+              strategy: "fail-workflow",
+            },
+          })),
+        );
+      } else if (action === "node-note") {
+        const nextDraft = addAnnotationToDraft(draft, { kind: "step", position: { x: contextMenuState.canvasX, y: contextMenuState.canvasY }, nodeIds: [node.id] });
+        onDraftChange(nextDraft.draft);
+        selectAnnotation(nextDraft.annotationId);
+      } else if (action === "node-delete") {
+        const nextDraft = removeNodeFromDraft(draft, node.id);
+        onDraftChange(nextDraft);
+        onSelectNode(nextDraft.editor.selectedNodeIds?.[0] ?? null);
+      }
+
+      closeContextMenu();
+      return;
+    }
+
+    if (contextMenuState.kind === "edge" && contextMenuState.edgeId) {
+      const edge = draft.edges.find((item) => item.id === contextMenuState.edgeId);
+      if (!edge) {
+        closeContextMenu();
+        return;
+      }
+
+      if (action === "edge-focus-source") {
+        selectNodes([edge.sourceNodeId]);
+        centerNodeInViewport(edge.sourceNodeId);
+      } else if (action === "edge-focus-target") {
+        selectNodes([edge.targetNodeId]);
+        centerNodeInViewport(edge.targetNodeId);
+      } else if (action === "edge-delete") {
+        onDraftChange(removeEdgeFromDraft(draft, edge.id));
+        setSelectedEdgeId(null);
+      } else if (action === "edge-note") {
+        const nextDraft = addAnnotationToDraft(draft, { kind: "route", position: { x: contextMenuState.canvasX, y: contextMenuState.canvasY }, edgeId: edge.id });
+        onDraftChange(nextDraft.draft);
+        selectAnnotation(nextDraft.annotationId);
+      } else if (action === "edge-reconnect-source") {
+        const viewport = viewportRef.current;
+        const point = draft.nodes.find((item) => item.id === edge.sourceNodeId);
+        const sourceAnchor = point ? getPortAnchor(point, (edge.sourcePort ?? edge.edgeType ?? "success") as WorkflowEdgeType) : { x: contextMenuState.canvasX, y: contextMenuState.canvasY };
+        startEdgeReconnect(edge, "source", sourceAnchor.x * zoom - (viewport?.scrollLeft ?? 0) + (viewport?.getBoundingClientRect().left ?? 0), sourceAnchor.y * zoom - (viewport?.scrollTop ?? 0) + (viewport?.getBoundingClientRect().top ?? 0));
+        return;
+      } else if (action === "edge-reconnect-target") {
+        const viewport = viewportRef.current;
+        const targetNode = draft.nodes.find((item) => item.id === edge.targetNodeId) ?? draft.nodes[0];
+        if (!targetNode) {
+          closeContextMenu();
+          return;
+        }
+        const targetAnchor = getTargetAnchor(targetNode);
+        startEdgeReconnect(edge, "target", targetAnchor.x * zoom - (viewport?.scrollLeft ?? 0) + (viewport?.getBoundingClientRect().left ?? 0), targetAnchor.y * zoom - (viewport?.scrollTop ?? 0) + (viewport?.getBoundingClientRect().top ?? 0));
+        return;
+      }
+
+      closeContextMenu();
+      return;
+    }
+
+    if (contextMenuState.kind === "group" && contextMenuState.groupId) {
+      if (action === "group-toggle") {
+        toggleGroupCollapsed(contextMenuState.groupId);
+        return;
+      }
+
+      const group = groups.find((item) => item.id === contextMenuState.groupId);
+      if (!group) {
+        closeContextMenu();
+        return;
+      }
+
+      if (action === "group-frame") {
+        const bounds = getGroupDisplayBounds(group, draft.nodes);
+        if (bounds) {
+          centerCanvasPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+        }
+      } else if (action === "group-select-nodes") {
+        const groupNodeIds = draft.nodes.filter((node) => group.nodeIds.includes(node.id)).map((node) => node.id);
+        selectNodes(groupNodeIds);
+      }
+
+      if (action === "group-note") {
+        const nextDraft = addAnnotationToDraft(draft, { kind: "step", position: { x: contextMenuState.canvasX, y: contextMenuState.canvasY }, groupId: contextMenuState.groupId });
+        onDraftChange(nextDraft.draft);
+        selectAnnotation(nextDraft.annotationId);
+      } else if (action === "group-delete") {
+        onDraftChange(removeGroupFromDraft(draft, contextMenuState.groupId));
+        selectGroup(null);
+      }
+
+      closeContextMenu();
+    }
+  };
 
   useEffect(() => {
     if (selectedEdgeId && !draft?.edges.some((edge) => edge.id === selectedEdgeId)) {
@@ -593,13 +968,13 @@ export function WorkflowStudio({
               <span>{isDirty ? "Unsaved changes" : "Draft synced"}</span>
             </div>
             <div className="workflow-scene__hud-actions">
-              <button className="secondary-action" type="button" onClick={() => onZoomChange(clampZoom(zoom - 0.1))}>
+              <button className="secondary-action workflow-action workflow-action--navigation" data-icon="-" type="button" onClick={() => onZoomChange(clampZoom(zoom - 0.1))}>
                 Zoom Out
               </button>
-              <button className="secondary-action" type="button" onClick={fitCanvasToViewport}>
+              <button className="secondary-action workflow-action workflow-action--utility" data-icon="[]" type="button" onClick={fitCanvasToViewport}>
                 Frame Canvas
               </button>
-              <button className="secondary-action" type="button" onClick={() => onZoomChange(clampZoom(zoom + 0.1))}>
+              <button className="secondary-action workflow-action workflow-action--navigation" data-icon="+" type="button" onClick={() => onZoomChange(clampZoom(zoom + 0.1))}>
                 Zoom In
               </button>
               <button className="primary-action" type="button" onClick={onSave} disabled={busyIntent === "save-workflow"}>
@@ -755,6 +1130,13 @@ export function WorkflowStudio({
                 onSelectNode(null);
               }
             }}
+            onContextMenu={(event) => {
+              if (event.target instanceof HTMLElement && event.target.closest(".workflow-node, .workflow-group, .workflow-annotation, .workflow-stage-canvas__edges, .workflow-stage-viewport__hud")) {
+                return;
+              }
+
+              openContextMenu(event, { kind: "canvas" });
+            }}
             onWheel={(event) => {
               if (!(event.ctrlKey || event.metaKey)) {
                 return;
@@ -788,16 +1170,15 @@ export function WorkflowStudio({
                 </div>
 
                 {groups.map((group) => {
-                  const bounds = getGroupBounds(group, draft.nodes);
+                  const bounds = getGroupDisplayBounds(group, draft.nodes);
                   if (!bounds) {
                     return null;
                   }
 
                   return (
-                    <button
+                    <div
                       key={group.id}
-                      type="button"
-                      className={`workflow-group${selectedGroupId === group.id ? " workflow-group--selected" : ""}`}
+                      className={`workflow-group${selectedGroupId === group.id ? " workflow-group--selected" : ""}${group.collapsed ? " workflow-group--collapsed" : ""}`}
                       style={{
                         left: `${bounds.x}px`,
                         top: `${bounds.y}px`,
@@ -809,14 +1190,29 @@ export function WorkflowStudio({
                         event.stopPropagation();
                         selectGroup(group.id);
                       }}
+                      onContextMenu={(event) => openContextMenu(event, { kind: "group", groupId: group.id })}
                     >
-                      <span className="workflow-group__label">{group.label}</span>
+                      <div className="workflow-group__header">
+                        <span className="workflow-group__label">{group.label}</span>
+                        <button
+                          type="button"
+                          className="workflow-group__toggle workflow-action workflow-action--utility"
+                          data-icon="="
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleGroupCollapsed(group.id);
+                          }}
+                        >
+                          {group.collapsed ? "Expand" : "Collapse"}
+                        </button>
+                      </div>
                       {group.description ? <span className="workflow-group__summary">{group.description}</span> : null}
-                    </button>
+                      <span className="workflow-group__count">{group.nodeIds.length} step{group.nodeIds.length === 1 ? "" : "s"}</span>
+                    </div>
                   );
                 })}
 
-                {annotations.map((annotation) => (
+                {visibleAnnotations.map((annotation) => (
                   <button
                     key={annotation.id}
                     type="button"
@@ -839,7 +1235,7 @@ export function WorkflowStudio({
                 ))}
 
                 <svg className="workflow-stage-canvas__edges" viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`} preserveAspectRatio="none">
-                  {draft.edges.map((edge) => {
+                  {draft.edges.filter((edge) => visibleNodeIds.has(edge.sourceNodeId) && visibleNodeIds.has(edge.targetNodeId)).map((edge) => {
                     const sourceNode = draft.nodes.find((node) => node.id === edge.sourceNodeId);
                     const targetNode = draft.nodes.find((node) => node.id === edge.targetNodeId);
                     if (!sourceNode || !targetNode) {
@@ -857,8 +1253,13 @@ export function WorkflowStudio({
                             event.stopPropagation();
                             selectEdge(edge.id);
                           }}
+                          onContextMenu={(event) => openContextMenu(event, { kind: "edge", edgeId: edge.id })}
                         />
-                        <path d={path} className={`workflow-stage-canvas__edge-path workflow-stage-canvas__edge-path--${edge.edgeType ?? edge.sourcePort ?? "default"}${selectedEdge?.id === edge.id ? " workflow-stage-canvas__edge-path--selected" : ""}`} />
+                        <path
+                          d={path}
+                          className={`workflow-stage-canvas__edge-path workflow-stage-canvas__edge-path--${edge.edgeType ?? edge.sourcePort ?? "default"}${selectedEdge?.id === edge.id ? " workflow-stage-canvas__edge-path--selected" : ""}`}
+                          onContextMenu={(event) => openContextMenu(event, { kind: "edge", edgeId: edge.id })}
+                        />
                         {edgeLabel || edge.annotation ? (
                           <text
                             className={`workflow-stage-canvas__edge-label workflow-stage-canvas__edge-label--${edge.edgeType ?? edge.sourcePort ?? "default"}${selectedEdge?.id === edge.id ? " workflow-stage-canvas__edge-label--selected" : ""}`}
@@ -866,12 +1267,37 @@ export function WorkflowStudio({
                               event.stopPropagation();
                               selectEdge(edge.id);
                             }}
+                            onContextMenu={(event) => openContextMenu(event, { kind: "edge", edgeId: edge.id })}
                             x={((sourceNode.position?.x ?? 0) + (targetNode.position?.x ?? 0)) / 2 + 16}
                             y={((sourceNode.position?.y ?? 0) + (targetNode.position?.y ?? 0)) / 2 - 12}
                           >
                             {edgeLabel ? <tspan x={((sourceNode.position?.x ?? 0) + (targetNode.position?.x ?? 0)) / 2 + 16}>{edgeLabel}</tspan> : null}
                             {edge.annotation ? <tspan className="workflow-stage-canvas__edge-note" x={((sourceNode.position?.x ?? 0) + (targetNode.position?.x ?? 0)) / 2 + 16} dy={edgeLabel ? "1.2em" : 0}>{edge.annotation}</tspan> : null}
                           </text>
+                        ) : null}
+                        {selectedEdge?.id === edge.id ? (
+                          <>
+                            <circle
+                              className={`workflow-stage-canvas__edge-handle workflow-stage-canvas__edge-handle--source workflow-action-outline--${getWorkflowToneForPort((edge.sourcePort ?? edge.edgeType ?? "success") as WorkflowEdgeType)}`}
+                              cx={getPortAnchor(sourceNode, (edge.sourcePort ?? edge.edgeType ?? "success") as WorkflowEdgeType).x}
+                              cy={getPortAnchor(sourceNode, (edge.sourcePort ?? edge.edgeType ?? "success") as WorkflowEdgeType).y}
+                              r="10"
+                              onPointerDown={(event) => {
+                                event.stopPropagation();
+                                startEdgeReconnect(edge, "source", event.clientX, event.clientY);
+                              }}
+                            />
+                            <circle
+                              className="workflow-stage-canvas__edge-handle workflow-stage-canvas__edge-handle--target workflow-action-outline--navigation"
+                              cx={getTargetAnchor(targetNode).x}
+                              cy={getTargetAnchor(targetNode).y}
+                              r="10"
+                              onPointerDown={(event) => {
+                                event.stopPropagation();
+                                startEdgeReconnect(edge, "target", event.clientX, event.clientY);
+                              }}
+                            />
+                          </>
                         ) : null}
                       </g>
                     );
@@ -887,7 +1313,7 @@ export function WorkflowStudio({
                   </svg>
                 ) : null}
 
-                {draft.nodes.map((node) => {
+                {visibleNodes.map((node) => {
                   const position = node.position ?? { x: 32, y: 32 };
                   const isSelected = selectedNodeIds.includes(node.id);
                   return (
@@ -910,7 +1336,7 @@ export function WorkflowStudio({
                         }
 
                         event.stopPropagation();
-                        onDraftChange(upsertConnectionEdge(draft, connectionDragState.sourceNodeId, connectionDragState.sourcePort, node.id));
+                        onDraftChange(applyConnectionDrop(draft, connectionDragState, node));
                         setConnectionDragState(null);
                         selectNodes([node.id]);
                       }}
@@ -933,13 +1359,15 @@ export function WorkflowStudio({
                           ),
                         });
                       }}
+                      onContextMenu={(event) => openContextMenu(event, { kind: "node", nodeId: node.id })}
                     >
                       <div className="workflow-node__ports">
                         {getNodePortLabels(node).map((port) => (
                           <button
                             key={port}
                             type="button"
-                            className={`workflow-node__port-handle workflow-node__port-handle--${port}`}
+                            className={`workflow-node__port-handle workflow-action workflow-action--${getWorkflowToneForPort(port)} workflow-node__port-handle--${port}`}
+                            data-icon={getWorkflowIconForPort(port)}
                             onPointerDown={(event) => {
                               event.stopPropagation();
                               const point = screenToCanvasPoint(event.clientX, event.clientY);
@@ -962,11 +1390,20 @@ export function WorkflowStudio({
                       <span>{describeNode(node, detail.availableActions, detail.availableConnections)}</span>
                       <div className="workflow-node__meta">
                         {getNodePortLabels(node).map((port) => (
-                          <span key={port} className={`workflow-node__port workflow-node__port--${port}`}>
+                          <span
+                            key={port}
+                            className={`workflow-node__port workflow-status-pill workflow-status-pill--${getWorkflowToneForPort(port)} workflow-node__port--${port}`}
+                            data-icon={getWorkflowIconForPort(port)}
+                          >
                             {toDisplay(port)}
                           </span>
                         ))}
-                        <span className="workflow-node__policy">{describeNodeErrorPolicy(node.errorHandling)}</span>
+                        <span
+                          className={`workflow-node__policy workflow-status-pill workflow-status-pill--${getErrorPolicyTone(node.errorHandling)}`}
+                          data-icon={getErrorPolicyIcon(node.errorHandling)}
+                        >
+                          {describeNodeErrorPolicy(node.errorHandling)}
+                        </span>
                       </div>
                     </button>
                   );
@@ -981,35 +1418,36 @@ export function WorkflowStudio({
                   <div className="workflow-stage-viewport__actions">
                     {selectedNode ? (
                       <>
-                        <button className="secondary-action" type="button" onClick={() => centerNodeInViewport(selectedNode.id)}>
+                        <button className="secondary-action workflow-action workflow-action--navigation" data-icon=">" type="button" onClick={() => centerNodeInViewport(selectedNode.id)}>
                           Focus Block
                         </button>
-                        <button className="secondary-action" type="button" onClick={handleDeleteSelectedNode}>
+                        <button className="secondary-action workflow-action workflow-action--danger" data-icon="!" type="button" onClick={handleDeleteSelectedNode}>
                           Delete Block
                         </button>
                       </>
                     ) : null}
                     {isMultiSelection ? (
-                      <button className="secondary-action" type="button" onClick={() => { const nextDraft = createGroupFromSelection(draft, selectedNodeIds); onDraftChange(nextDraft.draft); selectGroup(nextDraft.groupId); }}>
+                      <button className="secondary-action workflow-action workflow-action--progressive" data-icon="+" type="button" onClick={() => { const nextDraft = createGroupFromSelection(draft, selectedNodeIds); onDraftChange(nextDraft.draft); selectGroup(nextDraft.groupId); }}>
                         Group Selection
                       </button>
                     ) : null}
                     {selectedGroup ? (
-                      <button className="secondary-action" type="button" onClick={() => { onDraftChange(removeGroupFromDraft(draft, selectedGroup.id)); selectGroup(null); }}>
+                      <button className="secondary-action workflow-action workflow-action--danger" data-icon="!" type="button" onClick={() => { onDraftChange(removeGroupFromDraft(draft, selectedGroup.id)); selectGroup(null); }}>
                         Remove Group
                       </button>
                     ) : null}
                     {selectedEdge ? (
-                      <button className="secondary-action" type="button" onClick={handleDeleteSelectedEdge}>
+                      <button className="secondary-action workflow-action workflow-action--danger" data-icon="!" type="button" onClick={handleDeleteSelectedEdge}>
                         Delete Route
                       </button>
                     ) : null}
-                    <button className="secondary-action" type="button" onClick={() => { const nextDraft = addAnnotationToDraft(draft, { kind: selectedEdge ? "route" : selectedGroup ? "step" : "note", position: getViewportCenter(viewportRef.current, zoom), ...(selectedEdge?.id ? { edgeId: selectedEdge.id } : {}), ...(selectedGroup?.id ? { groupId: selectedGroup.id } : {}), ...(isMultiSelection ? { nodeIds: selectedNodeIds } : {}) }); onDraftChange(nextDraft.draft); selectAnnotation(nextDraft.annotationId); }}>
+                    <button className="secondary-action workflow-action workflow-action--utility" data-icon="+" type="button" onClick={() => { const nextDraft = addAnnotationToDraft(draft, { kind: selectedEdge ? "route" : selectedGroup ? "step" : "note", position: getViewportCenter(viewportRef.current, zoom), ...(selectedEdge?.id ? { edgeId: selectedEdge.id } : {}), ...(selectedGroup?.id ? { groupId: selectedGroup.id } : {}), ...(isMultiSelection ? { nodeIds: selectedNodeIds } : {}) }); onDraftChange(nextDraft.draft); selectAnnotation(nextDraft.annotationId); }}>
                       {selectedEdge ? "Add Route Note" : selectedGroup ? "Add Step Note" : isMultiSelection ? "Add Group Note" : "Add Canvas Note"}
                     </button>
                   </div>
                   <CanvasMinimap
                     draft={draft}
+                    nodes={visibleNodes}
                     canvasSize={canvasSize}
                     zoom={zoom}
                     viewportState={viewportState}
@@ -1023,6 +1461,26 @@ export function WorkflowStudio({
                 </div>
               </div>
             </div>
+            {contextMenuState ? (
+              <div className="workflow-context-menu" style={{ left: `${contextMenuState.viewportX}px`, top: `${contextMenuState.viewportY}px` }}>
+                <div className="workflow-context-menu__core">{contextMenuTitle}</div>
+                {contextMenuActions.map((action, index) => {
+                  const angle = (index / Math.max(contextMenuActions.length, 1)) * Math.PI * 2 - Math.PI / 2;
+                  return (
+                    <button
+                      key={action.id}
+                      type="button"
+                      className={`workflow-context-menu__action workflow-context-menu__action--${getContextActionTone(action.id)}`}
+                      style={{ transform: `translate(${Math.cos(angle) * contextMenuRadius}px, ${Math.sin(angle) * contextMenuRadius}px)` }}
+                      onClick={() => handleContextAction(action.id)}
+                    >
+                      <span className="workflow-context-menu__action-icon">{getContextActionIcon(action.id)}</span>
+                      <span>{action.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -1058,7 +1516,7 @@ export function WorkflowStudio({
           {isMultiSelection ? (
             <MultiSelectionInspector selectedNodes={selectedNodes} onCreateGroup={() => { const nextDraft = createGroupFromSelection(draft, selectedNodeIds); onDraftChange(nextDraft.draft); selectGroup(nextDraft.groupId); }} />
           ) : selectedGroup ? (
-            <GroupInspector group={selectedGroup} onChange={(group) => onDraftChange(updateGroupInDraft(draft, group.id, () => group))} onDelete={() => { onDraftChange(removeGroupFromDraft(draft, selectedGroup.id)); selectGroup(null); }} />
+            <GroupInspector group={selectedGroup} onChange={(group) => onDraftChange(updateGroupInDraft(draft, group.id, () => group))} onDelete={() => { onDraftChange(removeGroupFromDraft(draft, selectedGroup.id)); selectGroup(null); }} onToggleCollapse={() => toggleGroupCollapsed(selectedGroup.id)} />
           ) : selectedAnnotation ? (
             <AnnotationInspector annotation={selectedAnnotation} onChange={(annotation) => onDraftChange(updateAnnotationInDraft(draft, annotation.id, () => annotation))} onDelete={() => { onDraftChange(removeAnnotationFromDraft(draft, selectedAnnotation.id)); selectAnnotation(null); }} />
           ) : selectedNode ? (
@@ -1265,7 +1723,10 @@ function WorkflowErrorHandlingInspector({
           <p className="eyebrow">Workflow Error Policy</p>
           <h4>Default Failure Handling</h4>
         </div>
-        <span className="workflow-trigger-inspector__summary">
+        <span
+          className={`workflow-trigger-inspector__summary workflow-status-pill workflow-status-pill--${getErrorPolicyTone(errorHandling.defaultNodePolicy)}`}
+          data-icon={getErrorPolicyIcon(errorHandling.defaultNodePolicy)}
+        >
           {describeNodeErrorPolicy(errorHandling.defaultNodePolicy)}
         </span>
       </div>
@@ -1318,7 +1779,7 @@ function BranchingInspector({
           <p className="eyebrow">Branching</p>
           <h4>Routes From This Block</h4>
         </div>
-        <span className="workflow-trigger-inspector__summary">{availablePorts.length} outputs</span>
+        <span className="workflow-trigger-inspector__summary workflow-status-pill workflow-status-pill--utility" data-icon="#">{availablePorts.length} outputs</span>
       </div>
 
       <div className="workflow-branch-card__routes">
@@ -1327,12 +1788,20 @@ function BranchingInspector({
           const targetNode = existingEdge ? draft.nodes.find((item) => item.id === existingEdge.targetNodeId) : undefined;
           return (
             <div key={port} className="workflow-branch-card__route">
-              <div>
-                <strong>{toDisplay(port)}</strong>
+              <div className="workflow-branch-card__route-copy">
+                <div className="workflow-branch-card__pill-row">
+                  <span className={`workflow-status-pill workflow-status-pill--${getWorkflowToneForPort(port)}`} data-icon={getWorkflowIconForPort(port)}>
+                    {toDisplay(port)}
+                  </span>
+                  <span className={`workflow-status-pill workflow-status-pill--${existingEdge ? "navigation" : "utility"}`} data-icon={existingEdge ? ">" : "."}>
+                    {existingEdge ? "Connected" : "Open"}
+                  </span>
+                </div>
                 <span>{targetNode ? `Connected to ${targetNode.label}` : "No branch connected yet."}</span>
               </div>
               <button
-                className="secondary-action"
+                className={`secondary-action workflow-action workflow-action--${existingEdge ? "navigation" : getWorkflowToneForPort(port)}`}
+                data-icon={existingEdge ? ">" : getWorkflowIconForPort(port)}
                 type="button"
                 onClick={() => {
                   if (existingEdge) {
@@ -1372,7 +1841,10 @@ function NodeErrorHandlingInspector({
           <p className="eyebrow">Block Error Policy</p>
           <h4>{node.label}</h4>
         </div>
-        <span className="workflow-trigger-inspector__summary">
+        <span
+          className={`workflow-trigger-inspector__summary workflow-status-pill workflow-status-pill--${getErrorPolicyTone(node.errorHandling ?? fallbackPolicy)}`}
+          data-icon={getErrorPolicyIcon(node.errorHandling ?? fallbackPolicy)}
+        >
           {describeNodeErrorPolicy(node.errorHandling ?? fallbackPolicy)}
         </span>
       </div>
@@ -1460,7 +1932,7 @@ function EdgeInspector({
           <p className="eyebrow">Route Inspector</p>
           <h4>{getEdgeDisplayLabel(edge) ?? "Untitled Route"}</h4>
         </div>
-        <button className="secondary-action" type="button" onClick={onDelete}>
+        <button className="secondary-action workflow-action workflow-action--danger" data-icon="!" type="button" onClick={onDelete}>
           Delete Route
         </button>
       </div>
@@ -1509,6 +1981,7 @@ function EdgeInspector({
 
 function CanvasMinimap({
   draft,
+  nodes,
   canvasSize,
   zoom,
   viewportState,
@@ -1517,6 +1990,7 @@ function CanvasMinimap({
   onNavigate,
 }: {
   draft: WorkflowDocument;
+  nodes: WorkflowNode[];
   canvasSize: { width: number; height: number };
   zoom: number;
   viewportState: WorkflowViewportState;
@@ -1535,7 +2009,12 @@ function CanvasMinimap({
     <div className="workflow-minimap">
       <div className="workflow-minimap__header">
         <span>Overview</span>
-        <span>{draft.nodes.length} blocks</span>
+        <span className="workflow-status-pill workflow-status-pill--utility" data-icon="#">{draft.nodes.length} blocks</span>
+      </div>
+      <div className="workflow-minimap__legend">
+        <span className="workflow-status-pill workflow-status-pill--navigation" data-icon="[]">Viewport</span>
+        <span className="workflow-status-pill workflow-status-pill--progressive" data-icon="+">Primary Flow</span>
+        <span className="workflow-status-pill workflow-status-pill--danger" data-icon="!">Error Paths</span>
       </div>
       <div
         className="workflow-minimap__surface"
@@ -1547,7 +2026,7 @@ function CanvasMinimap({
         }}
       >
         <div className="workflow-minimap__viewport" style={viewportStyle} />
-        {draft.nodes.map((node) => {
+        {nodes.map((node) => {
           const position = node.position ?? { x: 0, y: 0 };
           return (
             <button
@@ -1584,7 +2063,7 @@ function MultiSelectionInspector({
           <p className="eyebrow">Multi-Select</p>
           <h4>{selectedNodes.length} Blocks Selected</h4>
         </div>
-        <button className="secondary-action" type="button" onClick={onCreateGroup}>
+        <button className="secondary-action workflow-action workflow-action--progressive" data-icon="+" type="button" onClick={onCreateGroup}>
           Create Group
         </button>
       </div>
@@ -1604,10 +2083,12 @@ function GroupInspector({
   group,
   onChange,
   onDelete,
+  onToggleCollapse,
 }: {
   group: WorkflowNodeGroup;
   onChange: (group: WorkflowNodeGroup) => void;
   onDelete: () => void;
+  onToggleCollapse: () => void;
 }) {
   return (
     <div className="workflow-inspector__section workflow-edge-card">
@@ -1616,9 +2097,14 @@ function GroupInspector({
           <p className="eyebrow">Step Group</p>
           <h4>{group.label}</h4>
         </div>
-        <button className="secondary-action" type="button" onClick={onDelete}>
-          Delete Group
-        </button>
+        <div className="workflow-inline-actions">
+          <button className="secondary-action workflow-action workflow-action--utility" data-icon="=" type="button" onClick={onToggleCollapse}>
+            {group.collapsed ? "Expand Group" : "Collapse Group"}
+          </button>
+          <button className="secondary-action workflow-action workflow-action--danger" data-icon="!" type="button" onClick={onDelete}>
+            Delete Group
+          </button>
+        </div>
       </div>
       <label className="form-field">
         <span>Group Label</span>
@@ -1652,7 +2138,7 @@ function AnnotationInspector({
           <p className="eyebrow">Canvas Note</p>
           <h4>{annotation.label}</h4>
         </div>
-        <button className="secondary-action" type="button" onClick={onDelete}>
+        <button className="secondary-action workflow-action workflow-action--danger" data-icon="!" type="button" onClick={onDelete}>
           Delete Note
         </button>
       </div>
@@ -1712,7 +2198,10 @@ function TriggerInspector({
           <p className="eyebrow">Workflow Trigger</p>
           <h4>{toDisplay(draft.trigger.type)} Trigger</h4>
         </div>
-        <span className="workflow-trigger-inspector__summary">
+        <span
+          className={`workflow-trigger-inspector__summary workflow-status-pill workflow-status-pill--${getTriggerTone(draft.trigger.type)}`}
+          data-icon={getTriggerIcon(draft.trigger.type)}
+        >
           {describeTrigger(draft.trigger, triggerCapableActions, connections)}
         </span>
       </div>
@@ -1976,7 +2465,7 @@ function EditableRecord({
     <div className="editable-record">
       <div className="editable-record__header">
         <span>{label}</span>
-        <button className="secondary-action" type="button" onClick={() => onChange({ ...value, newKey: "" })}>
+        <button className="secondary-action workflow-action workflow-action--progressive" data-icon="+" type="button" onClick={() => onChange({ ...value, newKey: "" })}>
           Add Field
         </button>
       </div>
@@ -1998,7 +2487,8 @@ function EditableRecord({
               onChange={(event) => onChange({ ...value, [key]: parseLooseValue(event.target.value) })}
             />
             <button
-              className="secondary-action"
+              className="secondary-action workflow-action workflow-action--danger"
+              data-icon="!"
               type="button"
               onClick={() => {
                 const nextValue = { ...value };
@@ -2231,15 +2721,57 @@ function getPortAnchor(node: WorkflowNode, port: WorkflowEdgeType): WorkflowCanv
   };
 }
 
+function getTargetAnchor(node: WorkflowNode): WorkflowCanvasPosition {
+  const position = node.position ?? { x: 0, y: 0 };
+  return {
+    x: position.x,
+    y: position.y + NODE_HEIGHT / 2,
+  };
+}
+
+function resolvePortForNode(node: WorkflowNode, desiredPort: WorkflowEdgeType): WorkflowEdgeType {
+  const ports = getNodePortLabels(node);
+  return (ports.includes(desiredPort) ? desiredPort : ports[0] ?? "success") as WorkflowEdgeType;
+}
+
 function buildPreviewEdgePath(connection: WorkflowConnectionDragState, nodes: WorkflowNode[]) {
   const sourceNode = nodes.find((node) => node.id === connection.sourceNodeId);
   if (!sourceNode) {
     return "";
   }
 
+  if (connection.reconnectEnd === "source" && connection.targetNodeId) {
+    const targetNode = nodes.find((node) => node.id === connection.targetNodeId);
+    if (!targetNode) {
+      return "";
+    }
+
+    const target = getTargetAnchor(targetNode);
+    const midX = connection.pointerX + (target.x - connection.pointerX) / 2;
+    return `M ${connection.pointerX} ${connection.pointerY} C ${midX} ${connection.pointerY}, ${midX} ${target.y}, ${target.x} ${target.y}`;
+  }
+
   const source = getPortAnchor(sourceNode, connection.sourcePort);
   const midX = source.x + (connection.pointerX - source.x) / 2;
   return `M ${source.x} ${source.y} C ${midX} ${source.y}, ${midX} ${connection.pointerY}, ${connection.pointerX} ${connection.pointerY}`;
+}
+
+function applyConnectionDrop(draft: WorkflowDocument, connection: WorkflowConnectionDragState, targetNode: WorkflowNode): WorkflowDocument {
+  if (connection.edgeId && connection.reconnectEnd === "target") {
+    return updateEdge(draft, connection.edgeId, (edge) => ({ ...edge, targetNodeId: targetNode.id }));
+  }
+
+  if (connection.edgeId && connection.reconnectEnd === "source") {
+    const resolvedPort = resolvePortForNode(targetNode, connection.sourcePort);
+    return updateEdge(draft, connection.edgeId, (edge) => ({
+      ...edge,
+      sourceNodeId: targetNode.id,
+      sourcePort: resolvedPort,
+      edgeType: resolvedPort,
+    }));
+  }
+
+  return upsertConnectionEdge(draft, connection.sourceNodeId, connection.sourcePort, targetNode.id);
 }
 
 function upsertConnectionEdge(draft: WorkflowDocument, sourceNodeId: string, sourcePort: WorkflowEdgeType, targetNodeId: string): WorkflowDocument {
@@ -2260,7 +2792,6 @@ function upsertConnectionEdge(draft: WorkflowDocument, sourceNodeId: string, sou
       : [...draft.edges, nextEdge],
   };
 }
-
 function getGroupBounds(group: WorkflowNodeGroup, nodes: WorkflowNode[]) {
   const groupNodes = nodes.filter((node) => group.nodeIds.includes(node.id));
   if (groupNodes.length === 0) {
@@ -2272,6 +2803,24 @@ function getGroupBounds(group: WorkflowNodeGroup, nodes: WorkflowNode[]) {
   const right = Math.max(...groupNodes.map((node) => (node.position?.x ?? 0) + NODE_WIDTH)) + 28;
   const bottom = Math.max(...groupNodes.map((node) => (node.position?.y ?? 0) + NODE_HEIGHT)) + 28;
   return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function getGroupDisplayBounds(group: WorkflowNodeGroup, nodes: WorkflowNode[]) {
+  const bounds = group.bounds ?? getGroupBounds(group, nodes);
+  if (!bounds) {
+    return null;
+  }
+
+  if (!group.collapsed) {
+    return bounds;
+  }
+
+  return {
+    x: bounds.x,
+    y: bounds.y,
+    width: Math.max(220, Math.min(bounds.width, 320)),
+    height: 84,
+  };
 }
 
 function createGroupFromSelection(draft: WorkflowDocument, nodeIds: string[]) {
@@ -2747,6 +3296,164 @@ function stringifyLooseValue(value: unknown): string {
     return value;
   }
   return JSON.stringify(value);
+}
+
+function getErrorPolicyTone(policy?: WorkflowErrorHandlingPolicy): "danger" | "utility" | "navigation" | "progressive" {
+  if (!policy) {
+    return "utility";
+  }
+
+  if (policy.strategy === "fail-workflow") {
+    return "danger";
+  }
+
+  if (policy.strategy === "retry") {
+    return "progressive";
+  }
+
+  if (policy.strategy === "branch") {
+    return policy.branchTargetNodeId ? "navigation" : "danger";
+  }
+
+  return "utility";
+}
+
+function getErrorPolicyIcon(policy?: WorkflowErrorHandlingPolicy): string {
+  if (!policy) {
+    return ".";
+  }
+
+  if (policy.strategy === "fail-workflow") {
+    return "!";
+  }
+
+  if (policy.strategy === "retry") {
+    return "R";
+  }
+
+  if (policy.strategy === "branch") {
+    return policy.branchTargetNodeId ? ">" : "?";
+  }
+
+  return ".";
+}
+
+function getTriggerTone(triggerType: WorkflowTriggerType): "danger" | "utility" | "navigation" | "progressive" {
+  switch (triggerType) {
+    case "polling":
+      return "progressive";
+    case "webhook":
+      return "navigation";
+    case "schedule":
+    case "queue":
+    case "manual":
+    default:
+      return "utility";
+  }
+}
+
+function getTriggerIcon(triggerType: WorkflowTriggerType): string {
+  switch (triggerType) {
+    case "schedule":
+      return "@";
+    case "polling":
+      return "~";
+    case "webhook":
+      return ">";
+    case "queue":
+      return "#";
+    case "manual":
+    default:
+      return "+";
+  }
+}
+
+function getWorkflowToneForPort(port: WorkflowEdgeType): "danger" | "utility" | "navigation" | "progressive" {
+  if (port === "error") {
+    return "danger";
+  }
+
+  if (port === "false") {
+    return "navigation";
+  }
+
+  if (port === "true" || port === "success") {
+    return "progressive";
+  }
+
+  return "utility";
+}
+
+function getWorkflowIconForPort(port: WorkflowEdgeType): string {
+  if (port === "error") {
+    return "!";
+  }
+
+  if (port === "false") {
+    return "?";
+  }
+
+  if (port === "true" || port === "success") {
+    return "+";
+  }
+
+  return ".";
+}
+
+function getContextActionTone(actionId: string): "danger" | "utility" | "navigation" | "progressive" {
+  if (actionId.endsWith("delete") || actionId === "node-policy-fail") {
+    return "danger";
+  }
+
+  if (actionId.includes("focus") || actionId.includes("follow") || actionId.includes("reconnect") || actionId.includes("source") || actionId.includes("target")) {
+    return "navigation";
+  }
+
+  if (actionId.includes("add") || actionId.includes("retry")) {
+    return "progressive";
+  }
+
+  return "utility";
+}
+
+function getContextActionIcon(actionId: string): string {
+  if (actionId.endsWith("delete") || actionId === "node-policy-fail") {
+    return "!";
+  }
+
+  if (actionId.includes("note")) {
+    return "+";
+  }
+
+  if (actionId.includes("fit") || actionId.includes("frame")) {
+    return "[]";
+  }
+
+  if (actionId.includes("focus") || actionId.includes("follow") || actionId.includes("source") || actionId.includes("target")) {
+    return ">";
+  }
+
+  if (actionId.includes("reconnect")) {
+    return "o";
+  }
+
+  if (actionId.includes("retry")) {
+    return "R";
+  }
+
+  if (actionId.includes("select")) {
+    return "#";
+  }
+
+  if (actionId.includes("toggle")) {
+    return "=";
+  }
+
+  if (actionId.includes("add")) {
+    return "+";
+  }
+
+  return ".";
 }
 
 function toDisplay(value: string): string {
